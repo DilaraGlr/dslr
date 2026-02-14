@@ -22,40 +22,73 @@ def get_courses(df):
 
 
 def plot_histograms(df, courses):
-    """Affiche les histogrammes de tous les cours"""
-    # 1. Récupérer les 4 maisons (sans les NaN)
+    """Affiche les histogrammes thème Harry Potter avec les couleurs des maisons"""
+    # 1. Couleurs des 4 maisons de Poudlard
+    house_colors = {
+        'Gryffindor': '#AE0001',    # Rouge
+        'Slytherin': '#2A623D',     # Vert vif
+        'Ravenclaw': '#0E1A40',     # Bleu
+        'Hufflepuff': '#ECB939'     # Jaune
+    }
+
+    # 2. Récupérer les 4 maisons (sans les NaN)
     houses = df['Hogwarts House'].dropna().unique()
 
-    # 2. Créer une grille de subplots
+    # 3. Créer une grille de subplots
     # Ex: 13 cours → grille 5x3
     n_courses = len(courses)
     n_cols = 3
     # Division arrondie vers le haut
     n_rows = (n_courses + n_cols - 1) // n_cols
 
-    fig, axes = plt.subplots(n_rows, n_cols, figsize=(15, n_rows * 3))
-    fig.suptitle('Distribution des notes par cours et par maison', fontsize=16)
+    fig, axes = plt.subplots(n_rows, n_cols, figsize=(16, n_rows * 3.5))
+
+    # Style parchemin façon grimoire de Poudlard
+    fig.patch.set_facecolor('#F5E6D3')  # Beige clair extérieur
+
+    # Titre principal stylisé
+    fig.suptitle('⚡ Poudlard - Distribution des Notes par Cours ⚡',
+                 fontsize=18, fontweight='bold', color='#D3A625', y=0.995)
 
     # Aplatir la grille d'axes pour faciliter l'itération
-    axes_flat = axes.ravel()  # ou axes.flatten()
+    axes_flat = axes.ravel()
 
-    # 3. Pour chaque cours:
+    # 4. Pour chaque cours:
     for i, course in enumerate(courses):
         ax = axes_flat[i]
+
+        # Fond parchemin
+        ax.set_facecolor('#FFF8E7')
 
         # Pour chaque maison, afficher un histogramme
         for house in houses:
             # Filtrer les données pour cette maison
             house_data = df[df['Hogwarts House'] == house][course]
             house_data = house_data.dropna()
-            # Afficher l'histogramme (alpha=0.5 pour transparence)
-            ax.hist(house_data, alpha=0.5, label=house, bins=20)
 
-        # Ajouter le titre et les labels
-        ax.set_title(course, fontsize=10)
-        ax.set_xlabel('Notes')
-        ax.set_ylabel('Nombre d\'élèves')
-        ax.legend(fontsize=8)
+            # Afficher l'histogramme avec couleurs des maisons
+            color = house_colors.get(house, '#888888')
+            ax.hist(house_data, alpha=0.7, label=house, bins=20,
+                    color=color, edgecolor='#3D2817', linewidth=0.5)
+
+        # Style du sous-graphique
+        ax.set_title(course, fontsize=11, fontweight='bold', color='#3D2817')
+        ax.set_xlabel('Notes', fontsize=9, color='#3D2817')
+        ax.set_ylabel('Nombre d\'élèves', fontsize=9, color='#3D2817')
+
+        # Grille dorée subtile
+        ax.grid(True, alpha=0.3, color='#C9A961', linestyle=':')
+
+        # Couleur des axes et ticks
+        ax.tick_params(colors='#3D2817', labelsize=8)
+        for spine in ax.spines.values():
+            spine.set_edgecolor('#8B6914')
+            spine.set_linewidth(1.5)
+
+        # Légende avec style parchemin
+        legend = ax.legend(fontsize=7, framealpha=0.9,
+                          facecolor='#F5E6D3', edgecolor='#8B6914')
+        plt.setp(legend.get_texts(), color='#3D2817')
 
     # Masquer les subplots vides (si 13 cours dans une grille 5x3 = 15 cases)
     for i in range(n_courses, len(axes_flat)):
@@ -63,7 +96,7 @@ def plot_histograms(df, courses):
 
     plt.tight_layout()
 
-    # 4. Afficher
+    # 5. Afficher
     plt.show()
 
 
