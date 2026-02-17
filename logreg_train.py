@@ -129,7 +129,7 @@ def handle_missing_values(X):
 
 
 def standardize(X):
-    """Standardise les données avec le z-score (normalisation)
+    """Mettre toutes les features à la même échelle (z-score normalization)
     Description:
         Pour chaque colonne :
         1. Calculer manuellement la moyenne μ
@@ -214,6 +214,185 @@ def add_intercept(X):
     return X_with_intercept
 
 
+def sigmoid(z):
+    """
+    Transforme un score brut en probabilité (entre 0 et 1)"""
+    # Limiter z pour éviter l'overflow numérique
+    z = np.clip(z, -500, 500)
+
+    # Appliquer la formule sigmoid
+    return 1 / (1 + np.exp(-z))
+
+
+def cost_function(h, y):
+    """
+    Calcule la log-loss (Binary Cross-Entropy)
+
+    Args:
+        h: numpy array (m,) - probabilités prédites par sigmoid (entre 0 et 1)
+        y: numpy array (m,) - vraies valeurs binaires (0 ou 1)
+
+    Returns:
+        float - valeur de la loss (plus elle est basse, mieux c'est)
+
+    Formule:
+        J = -1/m * Σ(y * log(h) + (1 - y) * log(1 - h))
+
+        - y * log(h)       : pénalise si la réponse est 1 et h proche de 0
+        - (1-y) * log(1-h) : pénalise si la réponse est 0 et h proche de 1
+    """
+    m = len(y)
+
+    # Clipper h pour éviter log(0) qui donne -inf et crashe tout
+    h = np.clip(h, 1e-15, 1 - 1e-15)
+
+    # Calculer la log-loss
+    # Partie 1 : cas où la vraie réponse est 1 → y * log(h)
+    # Partie 2 : cas où la vraie réponse est 0 → (1 - y) * log(1 - h)
+    loss = -1 / m * np.sum(y * np.log(h) + (1 - y) * np.log(1 - h))
+
+    return loss
+
+
+def compute_gradient(X, h, y):
+    """
+    Calcule le gradient de la loss par rapport aux poids theta
+
+    Args:
+        X: numpy array (m, n+1) - données avec intercept
+        h: numpy array (m,)    - probabilités prédites par sigmoid
+        y: numpy array (m,)    - vraies valeurs binaires (0 ou 1)
+
+    Returns:
+        grad: numpy array (n+1,) - gradient pour chaque poids
+
+    Formule vectorisée:
+        grad = (1/m) * X.T @ (h - y)
+
+        - (h - y)   : erreur entre prédiction et vérité (m,)
+        - X.T       : X transposé, shape (n+1, m)
+        - X.T @ (h-y) : produit matriciel → un gradient par poids (n+1,)
+        - 1/m       : moyenne sur tous les étudiants
+    """
+    m = len(y)
+
+    grad = (1 / m) * X.T @ (h - y)
+
+    return grad
+
+
+def train_one_vs_all(X, y, learning_rate=0.1, epochs=1000):
+    """
+    Entraîne 4 classifieurs binaires (un par maison)
+
+    Args:
+        X: numpy array (m, n+1) - données avec intercept
+        y: pandas Series        - labels (noms des maisons)
+        learning_rate: float    - taille du pas du gradient descent
+        epochs: int             - nombre d'itérations d'entraînement
+
+    Returns:
+        weights: dict - {'Gryffindor': theta, 'Slytherin': theta, ...}
+                        un tableau de poids pour chaque maison
+
+    Description:
+        Pour chaque maison :
+        1. Convertir y en vecteur binaire (1 = cette maison, 0 = autre)
+        2. Initialiser theta à zéro
+        3. Répéter `epochs` fois :
+           a. h = sigmoid(X @ theta)        → probabilités
+           b. loss = compute_loss(h, y_bin) → mesure l'erreur
+           c. grad = compute_gradient(...)  → direction de correction
+           d. theta = theta - lr * grad     → ajuster les poids
+    """
+    # Récupérer les 4 maisons uniques
+    houses = sorted(y.unique())
+
+    # Dictionnaire pour stocker les poids de chaque maison
+    weights = {}
+
+    print(f"Entraînement : {len(houses)} maisons, "
+          f"{epochs} epochs, lr={learning_rate}")
+    print()
+
+    # Pour chaque maison
+    for house in houses:
+        print(f"  🏰 {house}...")
+
+        # 1. Convertir y en vecteur binaire
+        # 1 = c'est cette maison, 0 = c'est une autre maison
+        y_binary = (y == house).astype(int).values
+
+        # 2. Initialiser theta à zéro (un poids par feature + biais)
+        theta = np.zeros(X.shape[1])
+
+        # 3. Boucle de gradient descent
+        for epoch in range(epochs):
+            # a. Calculer les probabilités prédites
+            h = sigmoid(X @ theta)
+
+            # b. Mesurer l'erreur (loss)
+            loss = cost_function(h, y_binary)
+
+            # c. Calculer le gradient
+            grad = compute_gradient(X, h, y_binary)
+
+            # d. Ajuster les poids
+            theta = theta - learning_rate * grad
+
+            # Afficher la progression toutes les 200 epochs
+            if (epoch + 1) % 200 == 0:
+                print(f"     epoch {epoch + 1}/{epochs} → loss = {loss:.4f}")
+
+        # Sauvegarder les poids de cette maison
+        weights[house] = theta
+
+    print()
+    print(f"✅ Entraînement terminé ! {len(weights)} modèles entraînés")
+
+    return weights
+
+
+def save_weights(weights, means, stds, feature_names, filepath='weights.json'):
+    """
+    Sauvegarde les poids et paramètres de normalisation dans un fichier JSON
+
+    Args:
+        weights: dict        - {'Gryffindor': theta, ...} (numpy arrays)
+        means: numpy array   - moyennes de chaque feature (de standardize)
+        stds: numpy array    - écarts-types de chaque feature (de standardize)
+        feature_names: list  - noms des features (de load_data)
+        filepath: str        - chemin du fichier JSON à créer
+
+    Description:
+        Sauvegarde tout ce dont logreg_predict.py aura besoin :
+        - feature_names : pour savoir quelles colonnes extraire du test set
+        - means, stds   : pour normaliser le test set de la même façon
+        - weights       : pour calculer les probabilités et prédire
+
+    Note:
+        JSON ne comprend pas les numpy arrays → .tolist() pour convertir
+    """
+    # Créer le dictionnaire avec toutes les données nécessaires
+    data = {
+        'feature_names': feature_names,
+        'means': means.tolist(),
+        'stds': stds.tolist(),
+        'weights': {
+            house: theta.tolist()
+            for house, theta in weights.items()
+        }
+    }
+
+    # Écrire dans le fichier JSON
+    with open(filepath, 'w') as f:
+        json.dump(data, f, indent=2)
+
+    print(f"✅ Poids sauvegardés dans : {filepath}")
+    print(f"   Features : {len(feature_names)}")
+    print(f"   Maisons  : {list(weights.keys())}")
+
+
 def main():
     """Point d'entrée principal du programme"""
     # Récupérer le fichier
@@ -274,8 +453,20 @@ def main():
     print(f"   Nombre de features (+intercept) : {X.shape[1]}")
     print()
 
-    # TODO : Étape 5 - Entraîner le modèle
-    # TODO : Étape 6 - Sauvegarder les poids
+    # Étape 5 : Entraîner le modèle
+    print("🧠 ÉTAPE 5 : Entraînement (One vs All)")
+    print("-" * 60)
+    weights = train_one_vs_all(X, y, learning_rate=0.1, epochs=1000)
+    print()
+
+    # Étape 6 : Sauvegarder les poids
+    print("💾 ÉTAPE 6 : Sauvegarde des poids")
+    print("-" * 60)
+    save_weights(weights, means, stds, feature_names)
+    print()
+    print("=" * 60)
+    print("⚡ ENTRAÎNEMENT TERMINÉ - Prêt pour la prédiction !")
+    print("=" * 60)
 
 
 if __name__ == '__main__':
