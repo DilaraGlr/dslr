@@ -18,7 +18,7 @@ def main():
     numeric_cols = [col for col in df.columns if df[col].dtype in [
         'float64', 'int64'] and col.lower() != "index"]
 
-    stat_titles = ["Count", "Mean", "Std", "Min", "25%", "50%", "75%", "Max"]
+    stat_titles = ["Count", "Mean", "Std", "Variance", "Skewness", "Kurtosis", "Min", "25%", "50%", "75%", "Max"]
 
     NAME_W = 20
     VAL_W = 14
@@ -40,6 +40,9 @@ def main():
 
         m = stats.mean(data, c)
         s = stats.std(data, c, m)
+        var = stats.variance(data, c, m)
+        skew = stats.skewness(data, c, m, s)
+        kurt = stats.kurtosis(data, c, m, s)
         mini = stats.min(data)
         maxi = stats.max(data)
 
@@ -52,6 +55,9 @@ def main():
         row += f"{c:>{VAL_W}.6f}"
         row += f"{m:>{VAL_W}.6f}"
         row += f"{s:>{VAL_W}.6f}"
+        row += f"{var:>{VAL_W}.6f}"
+        row += f"{skew:>{VAL_W}.6f}"
+        row += f"{kurt:>{VAL_W}.6f}"
         row += f"{mini:>{VAL_W}.6f}"
         row += f"{q25:>{VAL_W}.6f}"
         row += f"{q50:>{VAL_W}.6f}"
