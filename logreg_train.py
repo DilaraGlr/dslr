@@ -281,7 +281,7 @@ def compute_gradient(X, h, y):
     return grad
 
 
-def train_one_vs_all(X, y, learning_rate=0.1, epochs=1000):
+def train_one_vs_all(X, y, learning_rate=0.1, epochs=1000, mode='batch'):
     """
     Entraîne 4 classifieurs binaires (un par maison)
 
@@ -290,6 +290,7 @@ def train_one_vs_all(X, y, learning_rate=0.1, epochs=1000):
         y: pandas Series        - labels (noms des maisons)
         learning_rate: float    - taille du pas du gradient descent
         epochs: int             - nombre d'itérations d'entraînement
+        mode: str               - 'batch' (tout le dataset) ou 'sgd' (élève par élève)
 
     Returns:
         weights: dict - {'Gryffindor': theta, 'Slytherin': theta, ...}
@@ -300,10 +301,8 @@ def train_one_vs_all(X, y, learning_rate=0.1, epochs=1000):
         1. Convertir y en vecteur binaire (1 = cette maison, 0 = autre)
         2. Initialiser theta à zéro
         3. Répéter `epochs` fois :
-           a. h = sigmoid(X @ theta)        → probabilités
-           b. loss = compute_loss(h, y_bin) → mesure l'erreur
-           c. grad = compute_gradient(...)  → direction de correction
-           d. theta = theta - lr * grad     → ajuster les poids
+           - Mode batch: met à jour theta sur tout le dataset à la fois
+           - Mode SGD: met à jour theta élève par élève dans un ordre aléatoire
     """
     # Récupérer les 4 maisons uniques
     houses = sorted(y.unique())
@@ -328,17 +327,74 @@ def train_one_vs_all(X, y, learning_rate=0.1, epochs=1000):
 
         # 3. Boucle de gradient descent
         for epoch in range(epochs):
-            # a. Calculer les probabilités prédites
-            h = sigmoid(X @ theta)
+            if mode == 'batch':
+                # MODE BATCH : mettre à jour theta sur tout le dataset
+                # a. Calculer les probabilités prédites
+                h = sigmoid(X @ theta)
 
-            # b. Mesurer l'erreur (loss)
-            loss = cost_function(h, y_binary)
+                # b. Mesurer l'erreur (loss)
+                loss = cost_function(h, y_binary)
 
-            # c. Calculer le gradient
-            grad = compute_gradient(X, h, y_binary)
+                # c. Calculer le gradient
+                grad = compute_gradient(X, h, y_binary)
 
-            # d. Ajuster les poids
-            theta = theta - learning_rate * grad
+                # d. Ajuster les poids
+                theta = theta - learning_rate * grad
+
+            elif mode == 'sgd':
+                # MODE SGD : mettre à jour theta élève par élève
+                # 1. Mélanger les indices aléatoirement
+                m = X.shape[0]  # Nombre d'étudiants
+                indices = np.random.permutation(m)
+
+                # 2. Boucler élève par élève
+                for i in indices:
+                    # Extraire UN seul élève (shape (1, n+1) et (1,))
+                    Xi = X[i:i+1]
+                    yi = y_binary[i:i+1]
+
+                    # Calculer h, grad pour cet élève
+                    h_i = sigmoid(Xi @ theta)
+                    grad_i = compute_gradient(Xi, h_i, yi)
+
+                    # Mettre à jour theta immédiatement
+                    theta = theta - learning_rate * grad_i
+
+                # Calculer la loss sur TOUT le dataset pour l'affichage
+                h = sigmoid(X @ theta)
+                loss = cost_function(h, y_binary)
+
+            elif mode == 'mini-batch':
+                # MODE MINI-BATCH : mettre à jour theta par groupes de 32 élèves
+                # 1. Mélanger les indices aléatoirement
+                m = X.shape[0]  # Nombre d'étudiants
+                indices = np.random.permutation(m)
+
+                # 2. Définir la taille des batches
+                batch_size = 32
+
+                # 3. Boucler sur chaque batch
+                for start in range(0, m, batch_size):
+                    # Calculer la fin du batch (ne pas dépasser m)
+                    end = min(start + batch_size, m)
+
+                    # Extraire les indices du batch
+                    batch_indices = indices[start:end]
+
+                    # Extraire les données du batch (shape (32, n+1) ou moins)
+                    Xi = X[batch_indices]
+                    yi = y_binary[batch_indices]
+
+                    # Calculer h, grad pour ce batch
+                    h_batch = sigmoid(Xi @ theta)
+                    grad_batch = compute_gradient(Xi, h_batch, yi)
+
+                    # Mettre à jour theta
+                    theta = theta - learning_rate * grad_batch
+
+                # Calculer la loss sur TOUT le dataset pour l'affichage
+                h = sigmoid(X @ theta)
+                loss = cost_function(h, y_binary)
 
             # Afficher la progression toutes les 200 epochs
             if (epoch + 1) % 200 == 0:
@@ -395,15 +451,30 @@ def save_weights(weights, means, stds, feature_names, filepath='weights.json'):
 
 def main():
     """Point d'entrée principal du programme"""
-    # Récupérer le fichier
-    if len(sys.argv) > 1:
-        filepath = sys.argv[1]
-    else:
-        filepath = 'data/dataset_train.csv'
+    # Récupérer le fichier et le mode d'entraînement
+    filepath = 'data/dataset_train.csv'
+    mode = 'batch'  # Mode par défaut
+
+    # Parcourir les arguments
+    for arg in sys.argv[1:]:
+        if arg == '--sgd':
+            mode = 'sgd'
+        elif arg == '--mini-batch':
+            mode = 'mini-batch'
+        elif not arg.startswith('-'):
+            # C'est le fichier de données
+            filepath = arg
 
     print("=" * 60)
     print("⚡ POUDLARD - ENTRAÎNEMENT DU MODÈLE ⚡")
     print("=" * 60)
+    print(f"   Mode d'entraînement : {mode.upper()}")
+    if mode == 'batch':
+        print("   (Batch Gradient Descent - tout le dataset à la fois)")
+    elif mode == 'sgd':
+        print("   (Stochastic Gradient Descent - élève par élève)")
+    elif mode == 'mini-batch':
+        print("   (Mini-Batch Gradient Descent - groupes de 32 élèves)")
     print()
 
     # Étape 1 : Charger les données
@@ -456,7 +527,7 @@ def main():
     # Étape 5 : Entraîner le modèle
     print("🧠 ÉTAPE 5 : Entraînement (One vs All)")
     print("-" * 60)
-    weights = train_one_vs_all(X, y, learning_rate=0.1, epochs=1000)
+    weights = train_one_vs_all(X, y, learning_rate=0.1, epochs=1000, mode=mode)
     print()
 
     # Étape 6 : Sauvegarder les poids
